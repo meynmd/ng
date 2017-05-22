@@ -5,6 +5,7 @@ from __future__ import division
 import sys
 import string
 import random
+import numpy
 import scipy.stats
 import math
 from collections import defaultdict
@@ -13,8 +14,8 @@ from copy import *
 
 
 def Train(filename, gram = 3):
-    ngramCounts = Count(filename, gram)
-    ngram = FindProbabilities(ngramCounts, 4)
+    seqCounts, ngramCounts = Count(filename, gram)
+    ngram = FindProbabilities(seqCounts, ngramCounts)
     return ngram
 
 
@@ -25,6 +26,8 @@ def Load(filename):
 
 
 def Count(filename, gram):
+    preCount = defaultdict(int)
+
     # make set of chars
     data = Load(filename)
     data = data.replace(' ', '_')
@@ -55,11 +58,16 @@ def Count(filename, gram):
             sequence = line[i : i + gram - 1]
             nextChar = line[i + gram - 1]
             ngramCount[sequence][nextChar] += 1
+            preCount[sequence] += 1
 
-    return ngramCount
+    return preCount, ngramCount
 
 
-def FindProbabilities(ngramCount, k = 2):
+def FindProbabilities(seqCount, ngramCount, k = 5):
+    maxSeqCount = max(seqCount.values())
+    #print (sum(seqCount.values()) / len(seqCount))
+    #print(numpy.std(seqCount.values()))
+
     # freq : occurrences of each count
     freq = [0 for x in range(
         int(max(max(cc.values()) for cc in ngramCount.values())) + 1)]
@@ -73,6 +81,15 @@ def FindProbabilities(ngramCount, k = 2):
     a, b, _, _, _ = scipy.stats.linregress(range(len(freq)), freq)
 
     for seq, char_count in ngramCount.items():
+        sc = seqCount[seq]
+        sw = math.exp(-2. * sc / maxSeqCount)
+        #print('{0} : {1}'.format(seq, sw), file=sys.stderr)
+
+        v = numpy.std(char_count.values())
+        k = math.ceil(math.log(v + 1) * sw)
+
+        print('{0} : {1}'.format(seq, k), file=sys.stderr)
+
         realProb = {}
         reserved = 0.
         probSum = 0.
@@ -83,8 +100,9 @@ def FindProbabilities(ngramCount, k = 2):
                 ngramProb[seq][char] = p = 1. / len(char_count.keys())
                 reserved += p
                 continue
+
             # record count of every n-gram seen at least k times
-            if count >= k:
+            if count > k:
                 realProb[char] = p = ngramCount[seq][char] / totals[seq]
                 probSum += p
             else:
@@ -99,12 +117,14 @@ def FindProbabilities(ngramCount, k = 2):
                     reserved += p
                 else:
                     # GT smoothing
-                    ngramProb[seq][char] = p = (count + 1) * (ncp1 / (totals[seq] * nc))
+                    #sw = (math.log(count + 1 + varFactor, k + 1 + varFactor))
+                    #sw = 0.5 ** varFactor
+
+                    ngramProb[seq][char] = p = (1./sw) * (count + 1) * (ncp1 / (totals[seq] * nc))
                     reserved += p
 
         if probSum > 0.:
             # there is at least one observed ngram for this sequence
-
             w = (1. - reserved) / probSum
             for char in char_count.keys():
                 if char not in ngramProb[seq].keys():
@@ -113,6 +133,8 @@ def FindProbabilities(ngramCount, k = 2):
             w = 1. / sum(x for x in ngramProb[seq].values())
             for key, val in ngramProb[seq].items():
                 ngramProb[seq][key] = w * val
+
+        #print(sum(ngramProb[seq].values()))
 
     return ngramProb
 
