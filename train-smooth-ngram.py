@@ -32,6 +32,7 @@ def Count(filename, gram):
     chars = set([c for c in data])
     data = string.lower(data)
     data = (gram - 1) * '#' + data
+    data = data.replace('$', '$' + (gram - 1) * '#')
 
     # set up ngram dictionary with no nonzero values
     ngramCount = {}
@@ -44,14 +45,16 @@ def Count(filename, gram):
         pre += [i * '#' + ''.join(
             [x for x in p]
         ) for p in product(chars, repeat = gram - 1 - i)]
+    #chars.add('#')
     for p in pre:
-        ngramCount[p] = {x : 1 for x in chars}
+        ngramCount[p] = {x : 0 for x in chars}
 
     # count occurrences
-    for i in range(len(data) - gram - 1):
-        sequence = data[i : i + gram - 1]
-        nextChar = data[i + gram - 1]
-        ngramCount[sequence][nextChar] += 1
+    for line in data.split('$'):
+        for i in range(len(line) - gram - 1):
+            sequence = line[i : i + gram - 1]
+            nextChar = line[i + gram - 1]
+            ngramCount[sequence][nextChar] += 1
 
     return ngramCount
 
@@ -70,11 +73,16 @@ def FindProbabilities(ngramCount, k = 2):
     a, b, _, _, _ = scipy.stats.linregress(range(len(freq)), freq)
 
     for seq, char_count in ngramCount.items():
-        totals[seq] = sum(char_count.values())
         realProb = {}
         reserved = 0.
         probSum = 0.
+        totals[seq] = n = sum(char_count.values())
         for char, count in char_count.items():
+            if n <= 0.:
+                # no observed successors for this sequence
+                ngramProb[seq][char] = p = 1. / len(char_count.keys())
+                reserved += p
+                continue
             # record count of every n-gram seen at least k times
             if count >= k:
                 realProb[char] = p = ngramCount[seq][char] / totals[seq]
@@ -96,6 +104,7 @@ def FindProbabilities(ngramCount, k = 2):
 
         if probSum > 0.:
             # there is at least one observed ngram for this sequence
+
             w = (1. - reserved) / probSum
             for char in char_count.keys():
                 if char not in ngramProb[seq].keys():
@@ -108,24 +117,27 @@ def FindProbabilities(ngramCount, k = 2):
     return ngramProb
 
 
-def MakeFSA(ngram, order, startSymbol = '<s>'):
-    fsa = 'F\n(S (S *e* 1.0))\n'
+def MakeFSA(ngram, order, startSymbol = '<s>', endSymbol = '</s>'):
+    fsa = 'F\n(S ({0} {1} 1.0))\n'.format((order - 1) * '#', startSymbol)
+
+    if order == 1:
+        fsa += '(S (S {0} 1.0))\n'.format(startSymbol)
+        for seq, char_prob in ngram.items():
+            for char, prob in char_prob.items():
+                if char == '$':
+                    fsa += '(S (F {0} {1}))'.format(endSymbol, prob)
+                else:
+                    fsa += '(S (S {0} {1}))'.format(char, prob)
+        return fsa
+
     for seq, char_prob in ngram.items():
         for char, prob in char_prob.items():
-            # if all chars are start symbol
-            if seq[-1] == '#':
-                fsa += '(S ({0} {1} {2}))\n'.format(
-                    seq[1 :] + char, startSymbol, prob
-                )
+            if char == '$':
+                fsa += '({0} (F {1} {2}))\n'.format(
+                    seq, endSymbol, prob)
             else:
-                if char == '$':
-                    fsa += '({0} (F {1} {2}))\n'.format(
-                        seq, '</s>', prob
-                    )
-                else:
-                    fsa += '({0} ({1} {2} {3}))\n'.format(
-                        seq, seq[1 :] + char, char, prob
-                    )
+                fsa += '({0} ({1} {2} {3}))\n'.format(
+                    seq, seq[1 :] + char, char, prob)
     return fsa
 
 
