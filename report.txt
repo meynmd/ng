@@ -1,0 +1,5 @@
+commands:
+
+cat ex2-data/test.txt | sed -e 's/ /_/g;s/\(.\)/\1 /g' | awk '{printf("<s> %s </s>\n", $0)}' | carmel -slibOEWk 1 remove-vowels.fst > test.novowels
+
+cat test.novowels | carmel -sriIEWbk 10 tri.norm remove-vowels.fst
