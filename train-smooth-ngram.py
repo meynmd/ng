@@ -12,13 +12,19 @@ from itertools import product
 from copy import *
 
 
+def Train(filename, gram = 3):
+    ngramCounts = Count(filename, gram)
+    ngram = FindProbabilities(ngramCounts, 4)
+    return ngram
+
+
 def Load(filename):
     data = ''
     fp = open(filename, 'r')
     return fp.read()
 
 
-def Train(filename, gram = 3):
+def Count(filename, gram):
     # make set of chars
     data = Load(filename)
     data = data.replace(' ', '_')
@@ -28,50 +34,29 @@ def Train(filename, gram = 3):
     data = (gram - 1) * '#' + data
 
     # set up ngram dictionary with no nonzero values
-    ngram = {}
-    count = 0
-    pre = [''.join([
-        x for x in p]) for p in product(chars, repeat = gram - 1
-    )]
+    ngramCount = {}
+    pre = [''.join(
+        [x for x in p]
+    ) for p in product(chars, repeat = gram - 1)]
     pre += (gram - 1) * '#'
+
     for i in range(1, gram):
         pre += [i * '#' + ''.join(
             [x for x in p]
         ) for p in product(chars, repeat = gram - 1 - i)]
-
     for p in pre:
-        ngram[p] = {x : 0 for x in chars}
-        count += len(chars)
+        ngramCount[p] = {x : 1 for x in chars}
 
     # count occurrences
     for i in range(len(data) - gram - 1):
         sequence = data[i : i + gram - 1]
         nextChar = data[i + gram - 1]
-        ngram[sequence][nextChar] += 1
+        ngramCount[sequence][nextChar] += 1
 
-    smoothCount, totals = Smooth(ngram)
-
-    # calculate probabilities
-    ngram = defaultdict(defaultdict)
-    for seq, char_count in smoothCount.items():
-        #n = sum(char_count.values())
-        for char, count in char_count.items():
-            ngram[seq][char] = float(count) / totals[seq]
-            if ngram[seq][char] > 1.:
-                print(seq, char, count, totals[seq], file=sys.stderr)
-
-    for p in pre:
-        for c in chars:
-            if c not in ngram[p]:
-                print(p, c, file=sys.stderr)
-
-    return ngram
+    return ngramCount
 
 
-def Smooth(ngramCount):
-    k = 1
-    smoothedModel = {}
-
+def FindProbabilities(ngramCount, k = 2):
     # freq : occurrences of each count
     freq = [0 for x in range(
         int(max(max(cc.values()) for cc in ngramCount.values())) + 1)]
@@ -79,34 +64,48 @@ def Smooth(ngramCount):
         for char, count in char_count.items():
             freq[count] += 1
 
+    # smooth the counts
+    ngramProb = defaultdict(defaultdict)
+    totals = defaultdict(float)
     a, b, _, _, _ = scipy.stats.linregress(range(len(freq)), freq)
 
-    # smooth the counts
-    smoothCount = defaultdict(defaultdict)
-    totals = defaultdict(float)
     for seq, char_count in ngramCount.items():
+        totals[seq] = sum(char_count.values())
+        realProb = {}
+        reserved = 0.
+        probSum = 0.
         for char, count in char_count.items():
-            sc = 0
-            if count > 0:
-                sc = ngramCount[seq][char]
+            # record count of every n-gram seen at least k times
+            if count >= k:
+                realProb[char] = p = ngramCount[seq][char] / totals[seq]
+                probSum += p
             else:
-                nc = freq[count]
-                ncp1 = freq[count + 1]
+                # have to smooth
+                nc = freq[count]        # number seen this many times
+                ncp1 = freq[count + 1]  # number seen one extra time
+
+                # N_c+1 may be zero
                 if nc == 0 or ncp1 == 0:
-                    log_nc = b + a * math.log(count)
-                    sc = log_nc
+                    # Katz smoothing
+                    ngramProb[seq][char] = p = (b + a * math.log(count)) / totals[seq]
+                    reserved += p
                 else:
-                    nk = freq[1]
-                    nkp1 = freq[k + 1]
-                    sc = (
-                        (count + 1) * (float(ncp1) / nc) -
-                        count * (k + 1) * nkp1 / nk
-                        ) / (1 - (k + 1) * float(nkp1) / nk)
+                    # GT smoothing
+                    ngramProb[seq][char] = p = (count + 1) * (ncp1 / (totals[seq] * nc))
+                    reserved += p
 
-            smoothCount[seq][char] = sc
-            totals[seq] += sc
+        if probSum > 0.:
+            # there is at least one observed ngram for this sequence
+            w = (1. - reserved) / probSum
+            for char in char_count.keys():
+                if char not in ngramProb[seq].keys():
+                    ngramProb[seq][char] = w * realProb[char]
+        else:
+            w = 1. / sum(x for x in ngramProb[seq].values())
+            for key, val in ngramProb[seq].items():
+                ngramProb[seq][key] = w * val
 
-    return smoothCount, totals
+    return ngramProb
 
 
 def MakeFSA(ngram, order, startSymbol = '<s>'):
@@ -133,11 +132,11 @@ def MakeFSA(ngram, order, startSymbol = '<s>'):
 
 if __name__ == "__main__":
     filename = sys.argv[1]
-    order = int(sys.argv[2])
+    gram = int(sys.argv[2])
     outfile = sys.stdout
     if len(sys.argv) > 3:
         outfile = open(sys.argv[3], 'w')
 
-    model = Train(filename, order)
+    model = Train(filename, gram)
 
-    print(MakeFSA(model, order), file=outfile)
+    print(MakeFSA(model, gram), file=outfile)
