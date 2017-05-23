@@ -17,13 +17,8 @@ def Train(filename, gram = 3):
     seqCounts, ngramCounts = Count(filename, gram)
     if gram == 1:
         total = sum(ngramCounts.values())
-        #for s, cc in ngramCounts.items():
-        #    total = sum(cc.values())
-            
-        print(total, file=sys.stderr)
-	ngram = {}
+        ngram = {}
         ngram['uni'] = defaultdict(float)
-        #for seq, char_count in ngramCounts.items():
         for char, count in ngramCounts.items():
             ngram['uni'][char] = float(count) / total
     else:
@@ -55,7 +50,6 @@ def Count(filename, gram):
         for line in data.split('$'):
             line += '$'
             for char in line:
-                print (char, file=sys.stderr)    
                 ngramCount[char] += 1
         return None, ngramCount
     
@@ -85,16 +79,14 @@ def Count(filename, gram):
 
 
 def FindProbabilities(seqCount, ngramCount, k = 5):
-    maxSeqCount = max(seqCount.values())
-    #print (sum(seqCount.values()) / len(seqCount))
-    #print(numpy.std(seqCount.values()))
-
     # freq : occurrences of each count
     freq = [0 for x in range(
         int(max(max(cc.values()) for cc in ngramCount.values())) + 1)]
     for seq, char_count in ngramCount.items():
         for char, count in char_count.items():
             freq[count] += 1
+
+    maxSeqCount = max(seqCount.values())
 
     # smooth the counts
     ngramProb = defaultdict(defaultdict)
@@ -104,12 +96,8 @@ def FindProbabilities(seqCount, ngramCount, k = 5):
     for seq, char_count in ngramCount.items():
         sc = seqCount[seq]
         sw = math.exp(-2. * sc / maxSeqCount)
-        #print('{0} : {1}'.format(seq, sw), file=sys.stderr)
-
         v = numpy.std(char_count.values())
         k = math.ceil(math.log(v + 1) * sw)
-
-        print('{0} : {1}'.format(seq, k), file=sys.stderr)
 
         realProb = {}
         reserved = 0.
@@ -137,10 +125,6 @@ def FindProbabilities(seqCount, ngramCount, k = 5):
                     ngramProb[seq][char] = p = (b + a * math.log(count)) / totals[seq]
                     reserved += p
                 else:
-                    # GT smoothing
-                    #sw = (math.log(count + 1 + varFactor, k + 1 + varFactor))
-                    #sw = 0.5 ** varFactor
-
                     ngramProb[seq][char] = p = (1./sw) * (count + 1) * (ncp1 / (totals[seq] * nc))
                     reserved += p
 
@@ -155,22 +139,20 @@ def FindProbabilities(seqCount, ngramCount, k = 5):
             for key, val in ngramProb[seq].items():
                 ngramProb[seq][key] = w * val
 
-        #print(sum(ngramProb[seq].values()))
-
     return ngramProb
 
 
 def MakeFSA(ngram, order, startSymbol = '<s>', endSymbol = '</s>'):
-
     if order == 1:
-        fsa = 'F\n(S (F </s> 1.0))\n'
-        fsa += '(S (S {0} 1.0))\n'.format(startSymbol)
+        #fsa = 'F\n(S (F </s> 1.0))\n'
+        fsa = 'F\n(S (1 <s> 1.0))\n'
+        #fsa += '(S (S {0} 1.0))\n'.format(startSymbol)
         for seq, char_prob in ngram.items():
             for char, prob in char_prob.items():
                 if char == '$':
-                    fsa += '(S (F {0} {1}))\n'.format(endSymbol, prob)
+                    fsa += '(1 (F {0} {1}))\n'.format(endSymbol, prob)
                 else:
-                    fsa += '(S (S {0} {1}))\n'.format(char, prob)
+                    fsa += '(1 (1 {0} {1}))\n'.format(char, prob)
         return fsa
 
     fsa = 'F\n(S ({0} {1} 1.0))\n'.format((order - 1) * '#', startSymbol)

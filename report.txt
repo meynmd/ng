@@ -15,20 +15,77 @@ EX 2: Language Models and Entropy
     trigram.wfsa
 
 
+
 2.  What are the corpus probabilities your three models assign to the test data?  What are the respective
 (cross) entropies?
+
+    Unigram:    per-symbol entropy  4.115
+        product of probs=e^-27039.440833621,
+        probability=2^-39009.7
+        per-input-symbol-perplexity(N=9480)=2^4.11494
+        per-line-perplexity(N=100)=2^390.097
+
+    Bigram:     per-symbol entropy  3.492
+        product of probs=e^-22942.8845645149,
+        probability=2^-33099.6
+        per-input-symbol-perplexity(N=9480)=2^3.49152
+        per-line-perplexity(N=100)=2^330.996
+
+    Trigram:    per-symbol entropy  2.986
+        product of probs=e^-19624.1796699237,
+        probability=2^-28311.7
+        per-input-symbol-perplexity(N=9480)=2^2.98647
+        per-line-perplexity(N=100)=2^283.117
 
 
 
 3.  What are the final sizes of your WFSAs in states and transitions.
-(Hint:  use
-carmel -c <your_wfsa>
-).
+
+    unigram.wfsa:   Number of states in result: 3
+                    Number of arcs in result: 29
+
+    bigram.wfsa:    Number of states in result: 30
+                    Number of arcs in result: 785
+
+    trigram.wfsa:   Number of states in result: 759
+                    Number of arcs in result: 21197
+
+
+
 4.  Include a description of your smoothing method.  Your description should include the algorithms, how
 you used the held-out data, and what (if any) experiments you did before settling on your solution.
-5.  Include  a  sketch  drawing  of  your  3-gram  model  in  sufficient  detail  that  someone  could  replicate  it.
-Please consider this carefully – examine your drawing after you have drawn it and evaluate whether
-someone (not you) could build the same WFSA you have built.  We will consider it in the same light.
+
+After trying add-1 smoothing to get started, I changed the method to less-than-one smoothing, but was not
+satisfied with the results, in the neighborhood of 3.7 cross-entropy. I then implemented a basic Good-Turing
+smoothing to assign probability to observations with zero count. This got me closer to entropy of 3, but I
+had to make some further modifications to get below that. First, I applied Good-Turing smoothing to all counts
+<= k for some fixed k, but then decided to let the program choose k adaptively for each (n-1) sequence. The
+choice of k now depends on (1) the variance in counts following this sequence, and (2) how many times the
+sequence itself has been seen. This is based on the intuition that we should have more confidence in what we
+have learned from looking at what follows a sequence we have seen 100 times than one we have seen once or
+twice. Specifically the algorithm looks like this:
+
+for each (sequence, char-count) in counter
+    seen-score <- sequence count / max sequence count
+    sequence-weight <- exp(-2 * seen-score)
+    variance-weight <- stdev(char-count.values)
+    k <- ceiling(log(variance-weight + 1) * sequence-weight)
+
+    if sum of counts in char-count = 0, then
+        prob of each char given sequence <- 1 / |all possible chars|
+    else
+        for each (char, count) in char-count
+            if count > k, then
+                prob of char given sequence <- count / sum(counts for sequence)
+            else
+                if
+
+
+
+
+5.  Include  a  sketch  drawing  of  your  3-gram  model  in  sufficient  detail  that  someone  could
+replicate  it. Please consider this carefully – examine your drawing after you have drawn it and evaluate
+whether someone (not you) could build the same WFSA you have built.  We will consider it in the same light.
 1
 Important:
 •
