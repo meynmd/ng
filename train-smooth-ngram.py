@@ -15,7 +15,19 @@ from copy import *
 
 def Train(filename, gram = 3):
     seqCounts, ngramCounts = Count(filename, gram)
-    ngram = FindProbabilities(seqCounts, ngramCounts)
+    if gram == 1:
+        total = sum(ngramCounts.values())
+        #for s, cc in ngramCounts.items():
+        #    total = sum(cc.values())
+            
+        print(total, file=sys.stderr)
+	ngram = {}
+        ngram['uni'] = defaultdict(float)
+        #for seq, char_count in ngramCounts.items():
+        for char, count in ngramCounts.items():
+            ngram['uni'][char] = float(count) / total
+    else:
+        ngram = FindProbabilities(seqCounts, ngramCounts)
     return ngram
 
 
@@ -37,7 +49,16 @@ def Count(filename, gram):
     data = (gram - 1) * '#' + data
     data = data.replace('$', '$' + (gram - 1) * '#')
 
-    # set up ngram dictionary with no nonzero values
+    # set up ngram counts
+    if gram == 1:
+        ngramCount = defaultdict(int)
+        for line in data.split('$'):
+            line += '$'
+            for char in line:
+                print (char, file=sys.stderr)    
+                ngramCount[char] += 1
+        return None, ngramCount
+    
     ngramCount = {}
     pre = [''.join(
         [x for x in p]
@@ -140,18 +161,19 @@ def FindProbabilities(seqCount, ngramCount, k = 5):
 
 
 def MakeFSA(ngram, order, startSymbol = '<s>', endSymbol = '</s>'):
-    fsa = 'F\n(S ({0} {1} 1.0))\n'.format((order - 1) * '#', startSymbol)
 
     if order == 1:
+        fsa = 'F\n(S (F </s> 1.0))\n'
         fsa += '(S (S {0} 1.0))\n'.format(startSymbol)
         for seq, char_prob in ngram.items():
             for char, prob in char_prob.items():
                 if char == '$':
-                    fsa += '(S (F {0} {1}))'.format(endSymbol, prob)
+                    fsa += '(S (F {0} {1}))\n'.format(endSymbol, prob)
                 else:
-                    fsa += '(S (S {0} {1}))'.format(char, prob)
+                    fsa += '(S (S {0} {1}))\n'.format(char, prob)
         return fsa
 
+    fsa = 'F\n(S ({0} {1} 1.0))\n'.format((order - 1) * '#', startSymbol)
     for seq, char_prob in ngram.items():
         for char, prob in char_prob.items():
             if char == '$':
